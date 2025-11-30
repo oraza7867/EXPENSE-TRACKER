@@ -1,846 +1,597 @@
 // -----------------------------
-// Expense Tracker App
+// Expense Tracker App (Enhanced)
 // -----------------------------
-// This file contains all application logic:
-// - Managing expenses in memory
-// - Persisting to localStorage
-// - Filtering, sorting, and searching
-// - Generating charts with Chart.js
-// - Handling light/dark theme
+// Fixed version with Budget Tracker + Spending Trends
 // -----------------------------
 
-// Storage key used for saving expenses in localStorage.
+// Storage keys
 const STORAGE_KEY_EXPENSES = "expenseTracker:expenses";
-// Storage key used for saving theme preference in localStorage.
 const STORAGE_KEY_THEME = "expenseTracker:theme";
+const STORAGE_KEY_BUDGET = "expenseTracker:budget";
 
-// In-memory list of expenses loaded from localStorage.
+// App state
 let expenses = [];
-
-// Keep a reference to the Chart.js instance so it can be updated/destroyed.
 let categoryChart = null;
+let budgetChart = null; // New: for budget progress
 
-// -------------- Utility Functions --------------
+// -------------- Utility Functions (FIXED) --------------
 
-/**
-
-Generate a unique ID for each expense.
-
-Combines current timestamp and a random number.
-*/
 function generateId() {
-return (
-Date.now().toString(36) + Math.random().toString(36).substring(2, 9)
-);
+  return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
 
-/**
-
-Format a number as currency (₹).
-
-Uses Intl.NumberFormat for consistent formatting.
-*/
 function formatCurrency(amount) {
-return new Intl.NumberFormat("en-IN", {
-style: "currency",
-currency: "INR",
-maximumFractionDigits: 2,
-}).format(amount);
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+  }).format(amount);
 }
 
-/**
-
-Format a date string (YYYY-MM-DD) into a more readable format.
-*/
 function formatDate(isoDate) {
-const date = new Date(isoDate);
-if (isNaN(date.getTime())) return isoDate;
-return date.toLocaleDateString("en-IN", {
-year: "numeric",
-month: "short",
-day: "numeric",
-});
-}
-
-/**
-
-Get the year-month key (YYYY-MM) for a given Date or date string.
-*/
-function getYearMonthKey(dateInput) {
-const date = new Date(dateInput);
-if (isNaN(date.getTime())) return "";
-const year = date.getFullYear();
-const month = String(date.getMonth() + 1).padStart(2, "0");
-return ${year}-${month};
-}
-
-// -------------- Local Storage Handling --------------
-
-/**
-
-Load expenses array from localStorage.
-
-Explanation:
-
-localStorage stores only strings.​
-
-Data is saved as JSON with JSON.stringify and parsed back using JSON.parse.​
-*/
-function loadExpensesFromStorage() {
-try {
-const stored = localStorage.getItem(STORAGE_KEY_EXPENSES); //​
-if (!stored) {
-expenses = [];
-return;
-}
-const parsed = JSON.parse(stored);
-if (Array.isArray(parsed)) {
-expenses = parsed;
-} else {
-expenses = [];
-}
-} catch (err) {
-console.error("Failed to load expenses from localStorage", err);
-expenses = [];
-}
-}
-
-/**
-
-Save current expenses array into localStorage.
-
-Uses JSON.stringify because localStorage can only save strings.​
-*/
-function saveExpensesToStorage() {
-try {
-const data = JSON.stringify(expenses);
-localStorage.setItem(STORAGE_KEY_EXPENSES, data); //​
-} catch (err) {
-console.error("Failed to save expenses to localStorage", err);
-}
-}
-
-/**
-
-Load theme preference from localStorage and apply to <body>.
-*/
-function loadThemeFromStorage() {
-try {
-const theme = localStorage.getItem(STORAGE_KEY_THEME); //​
-if (theme === "dark" || theme === "light") {
-document.body.setAttribute("data-theme", theme);
-} else {
-document.body.setAttribute("data-theme", "light");
-}
-} catch {
-document.body.setAttribute("data-theme", "light");
-}
-}
-
-/**
-
-Save selected theme to localStorage for persistence.​
-*/
-function saveThemeToStorage(theme) {
-try {
-localStorage.setItem(STORAGE_KEY_THEME, theme);
-} catch (err) {
-console.error("Failed to save theme", err);
-}
-}
-
-// -------------- DOM Helpers --------------
-
-/**
-
-Get references to all important DOM elements once.
-*/
-const elements = {
-expenseForm: document.getElementById("expenseForm"),
-expenseId: document.getElementById("expenseId"),
-amount: document.getElementById("amount"),
-category: document.getElementById("category"),
-date: document.getElementById("date"),
-description: document.getElementById("description"),
-resetFormBtn: document.getElementById("resetFormBtn"),
-exportCsvBtn: document.getElementById("exportCsvBtn"),
-clearAllBtn: document.getElementById("clearAllBtn"),
-searchInput: document.getElementById("searchInput"),
-filterMonth: document.getElementById("filterMonth"),
-filterCategory: document.getElementById("filterCategory"),
-sortBy: document.getElementById("sortBy"),
-expenseTableBody: document.getElementById("expenseTableBody"),
-emptyState: document.getElementById("emptyState"),
-totalThisMonth: document.getElementById("totalThisMonth"),
-currentMonthLabel: document.getElementById("currentMonthLabel"),
-allTimeTotal: document.getElementById("allTimeTotal"),
-topCategory: document.getElementById("topCategory"),
-topCategoryAmount: document.getElementById("topCategoryAmount"),
-transactionCount: document.getElementById("transactionCount"),
-themeToggle: document.getElementById("themeToggle"),
-confirmModal: document.getElementById("confirmModal"),
-confirmCancelBtn: document.getElementById("confirmCancelBtn"),
-confirmOkBtn: document.getElementById("confirmOkBtn"),
-confirmTitle: document.getElementById("confirmTitle"),
-confirmMessage: document.getElementById("confirmMessage"),
-chartTypeButtons: document.querySelectorAll(
-"[data-chart-type]"
-),
-};
-
-/**
-
-Open confirmation modal with a message and callback.
-
-This is used, for example, before clearing all data.
-*/
-let confirmCallback = null;
-function openConfirmModal({ title, message, onConfirm }) {
-elements.confirmTitle.textContent = title;
-elements.confirmMessage.textContent = message;
-confirmCallback = onConfirm;
-elements.confirmModal.classList.remove("hidden");
-}
-
-/**
-
-Close the confirmation modal.
-*/
-function closeConfirmModal() {
-elements.confirmModal.classList.add("hidden");
-confirmCallback = null;
-}
-
-// -------------- Expense CRUD Functions --------------
-
-/**
-
-Create a new expense object from form values.
-*/
-function createExpenseFromForm() {
-const amountValue = parseFloat(elements.amount.value);
-if (isNaN(amountValue) || amountValue <= 0) {
-alert("Please enter a valid amount greater than 0.");
-return null;
-}
-
-const categoryValue = elements.category.value.trim();
-const dateValue = elements.date.value;
-const descriptionValue = elements.description.value.trim();
-
-if (!categoryValue || !dateValue || !descriptionValue) {
-alert("Please fill in all fields.");
-return null;
-}
-
-return {
-id: generateId(),
-amount: amountValue,
-category: categoryValue,
-date: dateValue,
-description: descriptionValue,
-createdAt: new Date().toISOString(),
-};
-}
-
-/**
-
-Handle form submission:
-
-If expenseId is empty => create new expense.
-
-If expenseId has value => update existing expense.
-*/
-function handleFormSubmit(event) {
-event.preventDefault();
-
-const editingId = elements.expenseId.value;
-
-if (editingId) {
-// Editing existing expense
-const index = expenses.findIndex((e) => e.id === editingId);
-if (index === -1) {
-alert("Could not find expense to update.");
-return;
-}
-const updatedAmount = parseFloat(elements.amount.value);
-if (isNaN(updatedAmount) || updatedAmount <= 0) {
-  alert("Please enter a valid amount greater than 0.");
-  return;
-}
-
-expenses[index].amount = updatedAmount;
-expenses[index].category = elements.category.value.trim();
-expenses[index].date = elements.date.value;
-expenses[index].description = elements.description.value.trim();
-
-saveExpensesToStorage();
-resetForm();
-refreshUI();
-} else {
-// Creating a new expense
-const newExpense = createExpenseFromForm();
-if (!newExpense) return;
-expenses.push(newExpense);
-saveExpensesToStorage();
-resetForm();
-refreshUI();
-}
-}
-
-/**
-
-Fill the form fields with an existing expense,
-
-enabling user to edit it.
-*/
-function populateFormForEdit(expense) {
-elements.expenseId.value = expense.id;
-elements.amount.value = expense.amount;
-elements.category.value = expense.category;
-elements.date.value = expense.date;
-elements.description.value = expense.description;
-}
-
-/**
-
-Reset the form fields and clear editing state.
-*/
-function resetForm() {
-elements.expenseId.value = "";
-elements.expenseForm.reset();
-}
-
-/**
-
-Delete an expense by ID from the list and update storage + UI.
-*/
-function deleteExpense(id) {
-expenses = expenses.filter((e) => e.id !== id);
-saveExpensesToStorage();
-refreshUI();
-}
-
-/**
-
-Clear all expenses from memory and localStorage.
-*/
-function clearAllExpenses() {
-expenses = [];
-saveExpensesToStorage();
-refreshUI();
-}
-
-// -------------- Filtering, Searching, Sorting --------------
-
-/**
-
-Get filtered, searched, and sorted list of expenses.
-
-Explanation of filtering:
-
-Search (description or category, case-insensitive)
-
-Filter by month (YYYY-MM), using getYearMonthKey
-
-Filter by category (exact match)
-
-Sort using selected option (date/amount ascending/descending)
-*/
-function getProcessedExpenses() {
-const searchQuery = elements.searchInput.value.trim().toLowerCase();
-const filterMonth = elements.filterMonth.value;
-const filterCategory = elements.filterCategory.value;
-const sortBy = elements.sortBy.value;
-
-let list = [...expenses];
-
-// Search by description or category
-if (searchQuery) {
-list = list.filter((expense) => {
-const inDescription = expense.description
-.toLowerCase()
-.includes(searchQuery);
-const inCategory = expense.category.toLowerCase().includes(searchQuery);
-return inDescription || inCategory;
-});
-}
-
-// Filter by month (YYYY-MM)
-if (filterMonth) {
-list = list.filter(
-(expense) => getYearMonthKey(expense.date) === filterMonth
-);
-}
-
-// Filter by category
-if (filterCategory) {
-list = list.filter((expense) => expense.category === filterCategory);
-}
-
-// Sorting
-list.sort((a, b) => {
-if (sortBy === "dateDesc") {
-return new Date(b.date) - new Date(a.date);
-}
-if (sortBy === "dateAsc") {
-return new Date(a.date) - new Date(b.date);
-}
-if (sortBy === "amountDesc") {
-return b.amount - a.amount;
-}
-if (sortBy === "amountAsc") {
-return a.amount - b.amount;
-}
-return 0;
-});
-
-return list;
-}
-
-// -------------- Rendering UI --------------
-
-/**
-
-Render the expenses table based on filtered/sorted data.
-*/
-function renderTable() {
-const processed = getProcessedExpenses();
-
-elements.expenseTableBody.innerHTML = "";
-
-if (processed.length === 0) {
-elements.emptyState.style.display = "block";
-return;
-}
-
-elements.emptyState.style.display = "none";
-
-for (const expense of processed) {
-const tr = document.createElement("tr");
-const tdDate = document.createElement("td");
-tdDate.textContent = formatDate(expense.date);
-
-const tdDescription = document.createElement("td");
-tdDescription.textContent = expense.description;
-
-const tdCategory = document.createElement("td");
-tdCategory.textContent = expense.category;
-
-const tdAmount = document.createElement("td");
-tdAmount.textContent = formatCurrency(expense.amount);
-
-const tdActions = document.createElement("td");
-const actionsDiv = document.createElement("div");
-actionsDiv.className = "table-actions";
-
-const editBtn = document.createElement("button");
-editBtn.className = "btn btn-small btn-outline";
-editBtn.textContent = "Edit";
-editBtn.addEventListener("click", () => populateFormForEdit(expense));
-
-const deleteBtn = document.createElement("button");
-deleteBtn.className = "btn btn-small btn-danger";
-deleteBtn.textContent = "Delete";
-deleteBtn.addEventListener("click", () => {
-  openConfirmModal({
-    title: "Delete Expense",
-    message: "Are you sure you want to delete this expense?",
-    onConfirm: () => {
-      deleteExpense(expense.id);
-    },
+  const date = new Date(isoDate);
+  if (isNaN(date.getTime())) return isoDate;
+  return date.toLocaleDateString("en-IN", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
-});
-
-actionsDiv.appendChild(editBtn);
-actionsDiv.appendChild(deleteBtn);
-tdActions.appendChild(actionsDiv);
-
-tr.appendChild(tdDate);
-tr.appendChild(tdDescription);
-tr.appendChild(tdCategory);
-tr.appendChild(tdAmount);
-tr.appendChild(tdActions);
-
-elements.expenseTableBody.appendChild(tr);
 }
+
+// FIXED: Template literal syntax error
+function getYearMonthKey(dateInput) {
+  const date = new Date(dateInput);
+  if (isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`; // Fixed: Added backticks
+}
+
+// -------------- NEW: Budget Functions --------------
+
+/**
+ * Load/save monthly budget from localStorage
+ */
+function getBudget() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_BUDGET);
+    return stored ? parseFloat(stored) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveBudget(amount) {
+  try {
+    localStorage.setItem(STORAGE_KEY_BUDGET, amount.toString());
+  } catch (err) {
+    console.error("Failed to save budget", err);
+  }
 }
 
 /**
+ * Get budget progress for current month
+ */
+function getBudgetProgress() {
+  const now = new Date();
+  const currentMonthKey = getYearMonthKey(now);
+  const budget = getBudget();
+  
+  let spent = 0;
+  for (const expense of expenses) {
+    if (getYearMonthKey(expense.date) === currentMonthKey) {
+      spent += expense.amount;
+    }
+  }
+  
+  return { budget, spent, remaining: Math.max(0, budget - spent), percentage: budget > 0 ? (spent / budget) * 100 : 0 };
+}
 
-Compute and render summary statistics (cards).
+// -------------- Local Storage (Enhanced) --------------
 
-Total this month
+function loadExpensesFromStorage() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_EXPENSES);
+    if (!stored) {
+      expenses = [];
+      return;
+    }
+    const parsed = JSON.parse(stored);
+    expenses = Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.error("Failed to load expenses", err);
+    expenses = [];
+  }
+}
 
-All-time total
+function saveExpensesToStorage() {
+  try {
+    localStorage.setItem(STORAGE_KEY_EXPENSES, JSON.stringify(expenses));
+  } catch (err) {
+    console.error("Failed to save expenses", err);
+  }
+}
 
-Top category (by total)
+function loadThemeFromStorage() {
+  try {
+    const theme = localStorage.getItem(STORAGE_KEY_THEME);
+    document.body.setAttribute("data-theme", theme === "dark" ? "dark" : "light");
+  } catch {
+    document.body.setAttribute("data-theme", "light");
+  }
+}
 
-Transaction count
-*/
+function saveThemeToStorage(theme) {
+  try {
+    localStorage.setItem(STORAGE_KEY_THEME, theme);
+  } catch (err) {
+    console.error("Failed to save theme", err);
+  }
+}
+
+// -------------- FIXED: Safe DOM Elements --------------
+
+function getElements() {
+  return {
+    expenseForm: () => document.getElementById("expenseForm"),
+    expenseId: () => document.getElementById("expenseId"),
+    amount: () => document.getElementById("amount"),
+    category: () => document.getElementById("category"),
+    date: () => document.getElementById("date"),
+    description: () => document.getElementById("description"),
+    resetFormBtn: () => document.getElementById("resetFormBtn"),
+    exportCsvBtn: () => document.getElementById("exportCsvBtn"),
+    clearAllBtn: () => document.getElementById("clearAllBtn"),
+    searchInput: () => document.getElementById("searchInput"),
+    filterMonth: () => document.getElementById("filterMonth"),
+    filterCategory: () => document.getElementById("filterCategory"),
+    sortBy: () => document.getElementById("sortBy"),
+    expenseTableBody: () => document.getElementById("expenseTableBody"),
+    emptyState: () => document.getElementById("emptyState"),
+    totalThisMonth: () => document.getElementById("totalThisMonth"),
+    currentMonthLabel: () => document.getElementById("currentMonthLabel"),
+    allTimeTotal: () => document.getElementById("allTimeTotal"),
+    topCategory: () => document.getElementById("topCategory"),
+    topCategoryAmount: () => document.getElementById("topCategoryAmount"),
+    transactionCount: () => document.getElementById("transactionCount"),
+    themeToggle: () => document.getElementById("themeToggle"),
+    confirmModal: () => document.getElementById("confirmModal"),
+    confirmCancelBtn: () => document.getElementById("confirmCancelBtn"),
+    confirmOkBtn: () => document.getElementById("confirmOkBtn"),
+    confirmTitle: () => document.getElementById("confirmTitle"),
+    confirmMessage: () => document.getElementById("confirmMessage"),
+    chartTypeButtons: () => document.querySelectorAll("[data-chart-type]"),
+    budgetInput: () => document.getElementById("budgetInput"), // New
+    budgetProgress: () => document.getElementById("budgetProgress"), // New
+  };
+}
+
+const elements = getElements();
+
+let confirmCallback = null;
+
+function openConfirmModal({ title, message, onConfirm }) {
+  const confirmTitle = elements.confirmTitle();
+  const confirmMessage = elements.confirmMessage();
+  const confirmModal = elements.confirmModal();
+  
+  if (confirmTitle && confirmMessage && confirmModal) {
+    confirmTitle.textContent = title;
+    confirmMessage.textContent = message;
+    confirmCallback = onConfirm;
+    confirmModal.classList.remove("hidden");
+  }
+}
+
+function closeConfirmModal() {
+  const confirmModal = elements.confirmModal();
+  if (confirmModal) {
+    confirmModal.classList.add("hidden");
+    confirmCallback = null;
+  }
+}
+
+// -------------- CRUD Functions (Enhanced) --------------
+
+function createExpenseFromForm() {
+  const amountEl = elements.amount();
+  const categoryEl = elements.category();
+  const dateEl = elements.date();
+  const descEl = elements.description();
+  
+  if (!amountEl || !categoryEl || !dateEl || !descEl) return null;
+  
+  const amountValue = parseFloat(amountEl.value);
+  if (isNaN(amountValue) || amountValue <= 0) {
+    alert("Please enter a valid amount greater than 0.");
+    return null;
+  }
+
+  const categoryValue = categoryEl.value.trim();
+  const dateValue = dateEl.value;
+  const descriptionValue = descEl.value.trim();
+
+  if (!categoryValue || !dateValue || !descriptionValue) {
+    alert("Please fill in all fields.");
+    return null;
+  }
+
+  return {
+    id: generateId(),
+    amount: amountValue,
+    category: categoryValue,
+    date: dateValue,
+    description: descriptionValue,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function handleFormSubmit(event) {
+  event.preventDefault();
+  const editingId = elements.expenseId()?.value || "";
+
+  if (editingId) {
+    // Edit existing
+    const index = expenses.findIndex(e => e.id === editingId);
+    if (index !== -1) {
+      const amountEl = elements.amount();
+      if (amountEl) {
+        const updatedAmount = parseFloat(amountEl.value);
+        if (!isNaN(updatedAmount) && updatedAmount > 0) {
+          expenses[index].amount = updatedAmount;
+          expenses[index].category = elements.category()?.value.trim() || "";
+          expenses[index].date = elements.date()?.value || "";
+          expenses[index].description = elements.description()?.value.trim() || "";
+          saveExpensesToStorage();
+          resetForm();
+          refreshUI();
+        }
+      }
+    }
+  } else {
+    // Add new
+    const newExpense = createExpenseFromForm();
+    if (newExpense) {
+      expenses.push(newExpense);
+      saveExpensesToStorage();
+      resetForm();
+      refreshUI();
+    }
+  }
+}
+
+function populateFormForEdit(expense) {
+  elements.expenseId()?.value = expense.id;
+  elements.amount()?.value = expense.amount;
+  elements.category()?.value = expense.category;
+  elements.date()?.value = expense.date;
+  elements.description()?.value = expense.description;
+}
+
+function resetForm() {
+  elements.expenseId().value = "";
+  const form = elements.expenseForm();
+  if (form) form.reset();
+}
+
+function deleteExpense(id) {
+  expenses = expenses.filter(e => e.id !== id);
+  saveExpensesToStorage();
+  refreshUI();
+}
+
+function clearAllExpenses() {
+  expenses = [];
+  saveExpensesToStorage();
+  refreshUI();
+}
+
+// -------------- Filtering & Sorting --------------
+
+function getProcessedExpenses() {
+  const searchEl = elements.searchInput();
+  const monthEl = elements.filterMonth();
+  const catEl = elements.filterCategory();
+  const sortEl = elements.sortBy();
+  
+  const searchQuery = searchEl ? searchEl.value.trim().toLowerCase() : "";
+  const filterMonth = monthEl ? monthEl.value : "";
+  const filterCategory = catEl ? catEl.value : "";
+  const sortBy = sortEl ? sortEl.value : "dateDesc";
+
+  let list = [...expenses];
+
+  if (searchQuery) {
+    list = list.filter(expense => 
+      expense.description.toLowerCase().includes(searchQuery) ||
+      expense.category.toLowerCase().includes(searchQuery)
+    );
+  }
+
+  if (filterMonth) {
+    list = list.filter(expense => getYearMonthKey(expense.date) === filterMonth);
+  }
+
+  if (filterCategory) {
+    list = list.filter(expense => expense.category === filterCategory);
+  }
+
+  list.sort((a, b) => {
+    if (sortBy === "dateDesc") return new Date(b.date) - new Date(a.date);
+    if (sortBy === "dateAsc") return new Date(a.date) - new Date(b.date);
+    if (sortBy === "amountDesc") return b.amount - a.amount;
+    if (sortBy === "amountAsc") return a.amount - b.amount;
+    return 0;
+  });
+
+  return list;
+}
+
+// -------------- Rendering (Enhanced) --------------
+
+function renderTable() {
+  const tbody = elements.expenseTableBody();
+  const emptyState = elements.emptyState();
+  if (!tbody || !emptyState) return;
+
+  const processed = getProcessedExpenses();
+  tbody.innerHTML = "";
+
+  if (processed.length === 0) {
+    emptyState.style.display = "block";
+    return;
+  }
+
+  emptyState.style.display = "none";
+
+  processed.forEach(expense => {
+    const tr = document.createElement("tr");
+    
+    tr.innerHTML = `
+      <td>${formatDate(expense.date)}</td>
+      <td>${expense.description}</td>
+      <td>${expense.category}</td>
+      <td>${formatCurrency(expense.amount)}</td>
+      <td>
+        <div class="table-actions">
+          <button class="btn btn-small btn-outline" onclick="populateFormForEdit(${JSON.stringify(expense)})">Edit</button>
+          <button class="btn btn-small btn-danger" onclick="deleteExpense('${expense.id}')">Delete</button>
+        </div>
+      </td>
+    `;
+    
+    tbody.appendChild(tr);
+  });
+}
+
 function renderSummary() {
-const now = new Date();
-const currentMonthKey = getYearMonthKey(now);
+  const now = new Date();
+  const currentMonthKey = getYearMonthKey(now);
+  
+  let thisMonthTotal = 0, allTimeTotal = 0;
+  const categoryTotals = {};
 
-let thisMonthTotal = 0;
-let allTimeTotal = 0;
-let transactionCount = expenses.length;
+  expenses.forEach(e => {
+    allTimeTotal += e.amount;
+    if (getYearMonthKey(e.date) === currentMonthKey) {
+      thisMonthTotal += e.amount;
+    }
+    categoryTotals[e.category] = (categoryTotals[e.category] || 0) + e.amount;
+  });
 
-// Category totals for finding top category and chart data.
-const categoryTotals = {};
+  // Update DOM safely
+  elements.totalThisMonth()?.textContent = formatCurrency(thisMonthTotal);
+  elements.allTimeTotal()?.textContent = formatCurrency(allTimeTotal);
+  elements.transactionCount()?.textContent = expenses.length.toString();
+  elements.currentMonthLabel()?.textContent = now.toLocaleDateString("en-IN", { year: "numeric", month: "long" });
 
-for (const e of expenses) {
-allTimeTotal += e.amount;
-const ymKey = getYearMonthKey(e.date);
-if (ymKey === currentMonthKey) {
-  thisMonthTotal += e.amount;
+  // Top category
+  let topCat = "–", topAmt = 0;
+  Object.entries(categoryTotals).forEach(([cat, amt]) => {
+    if (amt > topAmt) {
+      topAmt = amt;
+      topCat = cat;
+    }
+  });
+  elements.topCategory()?.textContent = topCat;
+  elements.topCategoryAmount()?.textContent = topAmt > 0 ? formatCurrency(topAmt) : "";
 }
 
-if (!categoryTotals[e.category]) {
-  categoryTotals[e.category] = 0;
-}
-categoryTotals[e.category] += e.amount;
-}
-
-elements.totalThisMonth.textContent = formatCurrency(thisMonthTotal);
-elements.allTimeTotal.textContent = formatCurrency(allTimeTotal);
-elements.transactionCount.textContent = transactionCount.toString();
-
-// Show label for current month (e.g. "December 2025")
-elements.currentMonthLabel.textContent = now.toLocaleDateString("en-IN", {
-year: "numeric",
-month: "long",
-});
-
-// Determine top category
-let topCategoryName = "–";
-let topCategoryAmount = 0;
-for (const [category, total] of Object.entries(categoryTotals)) {
-if (total > topCategoryAmount) {
-topCategoryAmount = total;
-topCategoryName = category;
-}
-}
-
-elements.topCategory.textContent = topCategoryName;
-elements.topCategoryAmount.textContent =
-topCategoryAmount > 0 ? formatCurrency(topCategoryAmount) : "";
-}
-
-/**
-
-Render (or update) the category-wise spending chart using Chart.js.
-
-Chart.js explanation:
-
-A <canvas> element in HTML is selected with getElementById.
-
-new Chart(ctx, config) creates the chart.​
-
-Data is passed as labels and datasets; config includes type and options.​
-*/
+// FIXED: Chart.js safe rendering with load detection
 function renderChart(chartType = "pie") {
-const ctx = document.getElementById("categoryChart");
-if (!ctx || typeof Chart === "undefined") {
-return;
+  const canvas = document.getElementById("categoryChart");
+  if (!canvas || typeof Chart === "undefined") {
+    console.log("Chart.js not ready yet");
+    return;
+  }
+
+  const processed = getProcessedExpenses();
+  const categoryTotals = {};
+  processed.forEach(e => {
+    categoryTotals[e.category] = (categoryTotals[e.category] || 0) + e.amount;
+  });
+
+  const labels = Object.keys(categoryTotals);
+  const data = Object.values(categoryTotals);
+
+  if (labels.length === 0) {
+    if (categoryChart) {
+      categoryChart.destroy();
+      categoryChart = null;
+    }
+    return;
+  }
+
+  if (categoryChart) categoryChart.destroy();
+
+  const ctx = canvas.getContext("2d");
+  categoryChart = new Chart(ctx, {
+    type: chartType,
+    data: {
+      labels,
+      datasets: [{
+        label: "Spending",
+        data,
+        backgroundColor: ["#2563eb","#10b981","#f97316","#ef4444","#8b5cf6","#ec4899","#22c55e","#facc15"],
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: "bottom", labels: { usePointStyle: true } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.label}: ${formatCurrency(ctx.parsed)}`
+          }
+        }
+      },
+      scales: chartType === "bar" ? { y: { beginAtZero: true } } : {}
+    }
+  });
 }
 
-// Aggregate totals by category from filtered list (so chart reflects filters).
-const processed = getProcessedExpenses();
-const categoryTotals = {};
-for (const e of processed) {
-if (!categoryTotals[e.category]) {
-categoryTotals[e.category] = 0;
-}
-categoryTotals[e.category] += e.amount;
-}
+// NEW: Budget Progress Chart
+function renderBudgetChart() {
+  const canvas = document.getElementById("budgetChart");
+  if (!canvas || typeof Chart === "undefined") return;
 
-const labels = Object.keys(categoryTotals);
-const data = Object.values(categoryTotals);
-
-// If no data, destroy existing chart and do nothing.
-if (labels.length === 0) {
-if (categoryChart) {
-categoryChart.destroy();
-categoryChart = null;
-}
-return;
-}
-
-// Destroy previous chart instance to avoid memory leaks.
-if (categoryChart) {
-categoryChart.destroy();
-}
-
-categoryChart = new Chart(ctx, {
-type: chartType,
-data: {
-labels,
-datasets: [
-{
-label: "Spending by Category",
-data,
-backgroundColor: [
-"#2563eb",
-"#10b981",
-"#f97316",
-"#ef4444",
-"#8b5cf6",
-"#ec4899",
-"#22c55e",
-"#facc15",
-],
-borderWidth: 1,
-},
-],
-},
-options: {
-responsive: true,
-plugins: {
-legend: {
-position: "bottom",
-labels: {
-usePointStyle: true,
-},
-},
-tooltip: {
-callbacks: {
-label: function (context) {
-const label = context.label || "";
-const value = context.parsed || 0;
-return ${label}: ${formatCurrency(value)};
-},
-},
-},
-},
-scales:
-chartType === "bar"
-? {
-y: {
-beginAtZero: true,
-},
-}
-: {},
-},
-});
+  const { budget, spent, percentage } = getBudgetProgress();
+  
+  if (budgetChart) budgetChart.destroy();
+  
+  const ctx = canvas.getContext("2d");
+  budgetChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Spent', 'Remaining'],
+      datasets: [{
+        data: [spent, Math.max(0, budget - spent)],
+        backgroundColor: percentage > 90 ? ['#ef4444', '#6b7280'] : ['#10b981', '#dbeafe']
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => formatCurrency(ctx.parsed)
+          }
+        }
+      }
+    }
+  });
 }
 
-/**
-
-Re-render all UI parts:
-
-Table
-
-Summary cards
-
-Chart
-*/
 function refreshUI() {
-renderTable();
-renderSummary();
-
-// Get currently active chart type button (default pie if none).
-let activeType = "pie";
-const activeBtn = document.querySelector(
-"[data-chart-type].chart-active"
-);
-if (activeBtn) {
-activeType = activeBtn.getAttribute("data-chart-type");
-}
-renderChart(activeType);
+  renderTable();
+  renderSummary();
+  renderChart();
+  renderBudgetChart(); // New
 }
 
-// -------------- CSV Export --------------
+// -------------- Event Listeners (Safe) --------------
 
-/**
-
-Convert expenses into CSV and trigger a download.
-
-CSV format: id, date, category, description, amount.
-*/
-function exportExpensesToCsv() {
-if (expenses.length === 0) {
-alert("No expenses to export.");
-return;
-}
-
-const headers = ["ID", "Date", "Category", "Description", "Amount"];
-const rows = expenses.map((e) => [
-e.id,
-e.date,
-e.category,
-e.description.replace(/"/g, '""'), // Escape quotes
-e.amount.toFixed(2),
-]);
-
-const csvLines = [headers.join(","), ...rows.map((r) => r.join(","))];
-const csvContent = csvLines.join("\n");
-
-const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-const url = URL.createObjectURL(blob);
-
-const link = document.createElement("a");
-link.setAttribute("href", url);
-link.setAttribute("download", "expenses.csv");
-document.body.appendChild(link);
-link.click();
-document.body.removeChild(link);
-URL.revokeObjectURL(url);
-}
-
-// -------------- Theme Toggle --------------
-
-/**
-
-Toggle between light and dark themes and save preference.
-*/
-function toggleTheme() {
-const current = document.body.getAttribute("data-theme") || "light";
-const next = current === "light" ? "dark" : "light";
-document.body.setAttribute("data-theme", next);
-saveThemeToStorage(next);
-
-elements.themeToggle.textContent =
-next === "dark" ? "☀ Light Mode" : "🌙 Dark Mode";
-}
-
-/**
-
-Initialize theme button label based on current theme.
-*/
-function updateThemeButtonLabel() {
-const current = document.body.getAttribute("data-theme") || "light";
-elements.themeToggle.textContent =
-current === "dark" ? "☀ Light Mode" : "🌙 Dark Mode";
-}
-
-// -------------- Event Listeners --------------
-
-/**
-
-Set up all event listeners:
-
-Form submit/reset
-
-Search/filter/sort inputs
-
-Export CSV
-
-Clear all with confirmation
-
-Theme toggle
-
-Chart type buttons
-
-Modal actions
-*/
 function setupEventListeners() {
-elements.expenseForm.addEventListener("submit", handleFormSubmit);
-elements.resetFormBtn.addEventListener("click", resetForm);
-
-elements.searchInput.addEventListener("input", refreshUI);
-elements.filterMonth.addEventListener("change", refreshUI);
-elements.filterCategory.addEventListener("change", refreshUI);
-elements.sortBy.addEventListener("change", refreshUI);
-
-elements.exportCsvBtn.addEventListener("click", exportExpensesToCsv);
-
-elements.clearAllBtn.addEventListener("click", () => {
-openConfirmModal({
-title: "Clear All Data",
-message:
-"This will permanently delete all expenses from this browser. Do you want to continue?",
-onConfirm: () => {
-clearAllExpenses();
-},
-});
-});
-
-elements.themeToggle.addEventListener("click", toggleTheme);
-
-// Chart type toggle buttons
-elements.chartTypeButtons.forEach((btn) => {
-btn.addEventListener("click", () => {
-elements.chartTypeButtons.forEach((b) =>
-b.classList.remove("chart-active")
-);
-btn.classList.add("chart-active");
-const type = btn.getAttribute("data-chart-type") || "pie";
-renderChart(type);
-});
-});
-
-// Modal buttons
-elements.confirmCancelBtn.addEventListener("click", () => {
-closeConfirmModal();
-});
-
-elements.confirmOkBtn.addEventListener("click", () => {
-if (typeof confirmCallback === "function") {
-confirmCallback();
-}
-closeConfirmModal();
-});
-
-// Close modal on background click
-elements.confirmModal.addEventListener("click", (event) => {
-if (event.target === elements.confirmModal) {
-closeConfirmModal();
-}
-});
+  // Form
+  const form = elements.expenseForm();
+  if (form) form.addEventListener("submit", handleFormSubmit);
+  
+  elements.resetFormBtn()?.addEventListener("click", resetForm);
+  elements.exportCsvBtn()?.addEventListener("click", exportExpensesToCsv);
+  
+  // Filters
+  ['searchInput', 'filterMonth', 'filterCategory', 'sortBy'].forEach(id => {
+    elements[id]?.addEventListener("input", refreshUI);
+    elements[id]?.addEventListener("change", refreshUI);
+  });
+  
+  // Theme
+  elements.themeToggle()?.addEventListener("click", toggleTheme);
+  
+  // Clear all
+  elements.clearAllBtn()?.addEventListener("click", () => {
+    openConfirmModal({
+      title: "Clear All Data",
+      message: "Delete all expenses permanently?",
+      onConfirm: clearAllExpenses
+    });
+  });
+  
+  // Chart toggles
+  elements.chartTypeButtons().forEach(btn => {
+    btn.addEventListener("click", () => {
+      elements.chartTypeButtons().forEach(b => b.classList.remove("chart-active"));
+      btn.classList.add("chart-active");
+      renderChart(btn.dataset.chartType || "pie");
+    });
+  });
+  
+  // Modal
+  elements.confirmCancelBtn()?.addEventListener("click", closeConfirmModal);
+  elements.confirmOkBtn()?.addEventListener("click", () => {
+    if (confirmCallback) confirmCallback();
+    closeConfirmModal();
+  });
 }
 
-// -------------- App Initialization --------------
+function toggleTheme() {
+  const current = document.body.getAttribute("data-theme") || "light";
+  const next = current === "light" ? "dark" : "light";
+  document.body.setAttribute("data-theme", next);
+  saveThemeToStorage(next);
+  
+  const toggle = elements.themeToggle();
+  if (toggle) {
+    toggle.textContent = next === "dark" ? "☀ Light Mode" : "🌙 Dark Mode";
+  }
+}
 
-/**
+function exportExpensesToCsv() {
+  if (expenses.length === 0) return alert("No expenses to export.");
+  
+  const csv = [
+    ["ID", "Date", "Category", "Description", "Amount"],
+    ...expenses.map(e => [e.id, e.date, e.category, `"${e.description}"`, e.amount])
+  ].map(row => row.join(",")).join("\n");
+  
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "expenses.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
-Initialize the application:
+// -------------- Initialization --------------
 
-Load theme preference
-
-Load expenses from localStorage
-
-Set default month filter to current month
-
-Set up event listeners
-
-Render initial UI
-*/
 function init() {
-loadThemeFromStorage();
-updateThemeButtonLabel();
-
-loadExpensesFromStorage();
-
-// Set filterMonth to current month by default (useful for summary alignment).
-const now = new Date();
-const currentMonthKey = getYearMonthKey(now);
-elements.filterMonth.value = currentMonthKey;
-
-setupEventListeners();
-refreshUI();
+  loadThemeFromStorage();
+  loadExpensesFromStorage();
+  
+  // Set current month
+  const now = new Date();
+  const monthKey = getYearMonthKey(now);
+  elements.filterMonth().value = monthKey;
+  
+  setupEventListeners();
+  refreshUI();
+  
+  // Chart.js load detection
+  const checkChartReady = () => {
+    if (typeof Chart !== "undefined") {
+      refreshUI();
+    } else {
+      setTimeout(checkChartReady, 100);
+    }
+  };
+  checkChartReady();
 }
 
-// Run init when DOM is ready.
-document.addEventListener("DOMContentLoaded", init);
+// Global functions for inline onclick
+window.populateFormForEdit = populateFormForEdit;
+window.deleteExpense = deleteExpense;
 
-// -----------------------------
-// HOW THE APP WORKS (SUMMARY)
-// -----------------------------
-// 1. Data model:
-// - Each expense has: id, amount, category, date, description, createdAt.
-// 2. Persistence with localStorage:
-// - Expenses are saved under STORAGE_KEY_EXPENSES as JSON string.
-// - On load, JSON is parsed back into the 'expenses' array.​
-// 3. UI rendering:
-// - refreshUI() re-renders table, summary cards, and chart
-// based on filtered/sorted expenses.
-// 4. Filtering & search:
-// - getProcessedExpenses() applies search, month, category filters,
-// then sorting by date or amount.
-// 5. Charts with Chart.js:
-// - renderChart() builds a pie or bar chart from filtered data
-// using new Chart(ctx, config).​
-// 6. Theme toggle:
-// - toggleTheme() switches between light/dark by setting body[data-theme]
-// and saves the choice in localStorage for persistence.
+document.addEventListener("DOMContentLoaded", init);
