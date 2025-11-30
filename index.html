@@ -1,163 +1,303 @@
-<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8" /> <title>Personal Finance Expense Tracker</title> <meta name="viewport" content="width=device-width, initial-scale=1.0" /> <!-- Main stylesheet --> <link rel="stylesheet" href="style.css" /> <!-- Chart.js CDN for charts --> <!-- Using CDN is the easiest way to include Chart.js in a static app. --> <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js" defer></script> <!-- Main app script --> <script src="script.js" defer></script> </head> <body> <header class="app-header"> <div class="app-title"> <h1>Expense Tracker</h1> <p>Track your personal finances smartly</p> </div> <button id="themeToggle" class="btn btn-outline"> 🌙 Dark Mode </button> </header> <main class="container"> <!-- Top summary cards --> <section class="summary-grid"> <div class="card"> <h2>Total This Month</h2> <p class="card-value" id="totalThisMonth">₹0</p> <p class="card-subtitle" id="currentMonthLabel"></p> </div> <div class="card"> <h2>All-Time Total</h2> <p class="card-value" id="allTimeTotal">₹0</p> </div> <div class="card"> <h2>Top Category</h2> <p class="card-value" id="topCategory">–</p> <p class="card-subtitle" id="topCategoryAmount"></p> </div> <div class="card"> <h2>Transactions</h2> <p class="card-value" id="transactionCount">0</p> </div> </section>
-<!-- Form + filters row -->
-<section class="layout-grid">
-  <!-- Expense form -->
-  <section class="panel">
-    <h2>Add / Edit Expense</h2>
-    <form id="expenseForm">
-      <!-- Hidden field for editing existing expense -->
-      <input type="hidden" id="expenseId" />
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Personal Finance Expense Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-      <div class="form-group">
-        <label for="amount">Amount (₹)</label>
-        <input type="number" id="amount" min="0" step="0.01" required />
-      </div>
+  <!-- Main stylesheet -->
+  <link rel="stylesheet" href="style.css" />
 
-      <div class="form-group">
-        <label for="category">Category</label>
-        <select id="category" required>
-          <option value="">Select a category</option>
-          <option value="Food">Food</option>
-          <option value="Transport">Transport</option>
-          <option value="Shopping">Shopping</option>
-          <option value="Rent">Rent</option>
-          <option value="Bills">Bills</option>
-          <option value="Entertainment">Entertainment</option>
-          <option value="Health">Health</option>
-          <option value="Other">Other</option>
-        </select>
-      </div>
+  <!-- Chart.js CDN for charts (must be loaded before script.js) [web:7][web:22][web:23] -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js" defer></script>
 
-      <div class="form-group">
-        <label for="date">Date</label>
-        <input type="date" id="date" required />
-      </div>
-
-      <div class="form-group">
-        <label for="description">Description</label>
-        <input
-          type="text"
-          id="description"
-          placeholder="e.g., Dinner, Uber ride, Netflix"
-          required
-        />
-      </div>
-
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">
-          Save Expense
-        </button>
-        <button type="button" id="resetFormBtn" class="btn btn-outline">
-          Clear Form
-        </button>
-      </div>
-    </form>
-
-    <div class="panel-footer">
-      <button id="exportCsvBtn" class="btn btn-secondary">
-        ⬇ Export as CSV
-      </button>
-      <button id="clearAllBtn" class="btn btn-danger">
-        🗑 Clear All Data
-      </button>
+  <!-- Main app script -->
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-title">
+      <h1>Expense Tracker</h1>
+      <p>Track your personal finances smartly</p>
     </div>
-  </section>
+    <button id="themeToggle" class="btn btn-outline">
+      🌙 Dark Mode
+    </button>
+  </header>
 
-  <!-- Filters + chart -->
-  <section class="panel">
-    <h2>Filters & Chart</h2>
+  <main class="container">
+    <!-- Top summary + budget cards -->
+    <section class="summary-grid">
+      <div class="card">
+        <h2>Total This Month</h2>
+        <p class="card-value" id="totalThisMonth">₹0</p>
+        <p class="card-subtitle" id="currentMonthLabel"></p>
+      </div>
 
-    <!-- Filters -->
-    <div class="filters">
-      <div class="form-group">
-        <label for="searchInput">Search</label>
+      <div class="card">
+        <h2>All-Time Total</h2>
+        <p class="card-value" id="allTimeTotal">₹0</p>
+      </div>
+
+      <div class="card">
+        <h2>Top Category</h2>
+        <p class="card-value" id="topCategory">–</p>
+        <p class="card-subtitle" id="topCategoryAmount"></p>
+      </div>
+
+      <!-- New: Monthly budget input -->
+      <div class="card">
+        <h2>Monthly Budget</h2>
         <input
-          type="text"
-          id="searchInput"
-          placeholder="Search by description or category"
+          type="number"
+          id="budgetInput"
+          placeholder="Set budget (₹)"
+          min="0"
+          step="100"
+          style="width: 100%; margin-top: 0.6rem; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid #e5e7eb;"
         />
+        <p class="card-subtitle" id="budgetHint">Budget applies to current month</p>
+      </div>
+    </section>
+
+    <!-- Second row: Budget progress + transactions -->
+    <section class="summary-grid" style="margin-top: 0.8rem;">
+      <div class="card">
+        <h2>Budget Progress</h2>
+        <div
+          id="budgetProgress"
+          class="budget-progress"
+          style="
+            width: 100%;
+            height: 10px;
+            background: #e5e7eb;
+            border-radius: 999px;
+            overflow: hidden;
+            margin-top: 0.6rem;
+          "
+        >
+          <div
+            id="budgetProgressBar"
+            style="
+              height: 100%;
+              width: 0%;
+              background: #10b981;
+              transition: width 0.25s ease-out, background 0.25s ease-out;
+            "
+          ></div>
+        </div>
+        <p class="card-subtitle" id="budgetStatus" style="margin-top: 0.4rem;">
+          No budget set
+        </p>
       </div>
 
-      <div class="form-group">
-        <label for="filterMonth">Month</label>
-        <!-- Month input allows YYYY-MM format, helpful for monthly filtering. -->
-        <input type="month" id="filterMonth" />
+      <div class="card">
+        <h2>Transactions</h2>
+        <p class="card-value" id="transactionCount">0</p>
+        <p class="card-subtitle">Total number of expenses</p>
       </div>
 
-      <div class="form-group">
-        <label for="filterCategory">Category</label>
-        <select id="filterCategory">
-          <option value="">All</option>
-          <option value="Food">Food</option>
-          <option value="Transport">Transport</option>
-          <option value="Shopping">Shopping</option>
-          <option value="Rent">Rent</option>
-          <option value="Bills">Bills</option>
-          <option value="Entertainment">Entertainment</option>
-          <option value="Health">Health</option>
-          <option value="Other">Other</option>
-        </select>
+      <!-- Spacer cards just to keep layout balanced on desktop -->
+      <div class="card">
+        <h2>Tip</h2>
+        <p class="card-subtitle">
+          Use filters to analyze spending by category and month.
+        </p>
       </div>
 
-      <div class="form-group">
-        <label for="sortBy">Sort By</label>
-        <select id="sortBy">
-          <option value="dateDesc">Date (newest first)</option>
-          <option value="dateAsc">Date (oldest first)</option>
-          <option value="amountDesc">Amount (high to low)</option>
-          <option value="amountAsc">Amount (low to high)</option>
-        </select>
+      <div class="card">
+        <h2>Insight</h2>
+        <p class="card-subtitle">
+          Export CSV and analyze further in Excel or Python.
+        </p>
       </div>
-    </div>
+    </section>
 
-    <!-- Chart area -->
-    <div class="chart-container">
-      <div class="chart-header">
-        <h3>Category-wise Spending</h3>
-        <div class="chart-toggle">
-          <button
-            type="button"
-            class="btn btn-small btn-outline chart-active"
-            data-chart-type="pie"
-          >
-            Pie
+    <!-- Form + filters row -->
+    <section class="layout-grid">
+      <!-- Expense form -->
+      <section class="panel">
+        <h2>Add / Edit Expense</h2>
+        <form id="expenseForm">
+          <!-- Hidden field for editing existing expense -->
+          <input type="hidden" id="expenseId" />
+
+          <div class="form-group">
+            <label for="amount">Amount (₹)</label>
+            <input type="number" id="amount" min="0" step="0.01" required />
+          </div>
+
+          <div class="form-group">
+            <label for="category">Category</label>
+            <select id="category" required>
+              <option value="">Select a category</option>
+              <option value="Food">Food</option>
+              <option value="Transport">Transport</option>
+              <option value="Shopping">Shopping</option>
+              <option value="Rent">Rent</option>
+              <option value="Bills">Bills</option>
+              <option value="Entertainment">Entertainment</option>
+              <option value="Health">Health</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="date">Date</label>
+            <input type="date" id="date" required />
+          </div>
+
+          <div class="form-group">
+            <label for="description">Description</label>
+            <input
+              type="text"
+              id="description"
+              placeholder="e.g., Dinner, Uber ride, Netflix"
+              required
+            />
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">
+              Save Expense
+            </button>
+            <button type="button" id="resetFormBtn" class="btn btn-outline">
+              Clear Form
+            </button>
+          </div>
+        </form>
+
+        <div class="panel-footer">
+          <button id="exportCsvBtn" class="btn btn-secondary">
+            ⬇ Export as CSV
           </button>
-          <button
-            type="button"
-            class="btn btn-small btn-outline"
-            data-chart-type="bar"
-          >
-            Bar
+          <button id="clearAllBtn" class="btn btn-danger">
+            🗑 Clear All Data
           </button>
         </div>
-      </div>
-      <!-- Canvas to render Chart.js chart -->
-      <canvas id="categoryChart"></canvas>
-    </div>
-  </section>
-</section>
+      </section>
 
-<!-- Expenses table -->
-<section class="panel">
-  <h2>Expenses</h2>
-  <div class="table-wrapper">
-    <table id="expenseTable">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Description</th>
-          <th>Category</th>
-          <th>Amount (₹)</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody id="expenseTableBody">
-        <!-- Filled dynamically with JavaScript -->
-      </tbody>
-    </table>
-    <p id="emptyState" class="empty-state">
-      No expenses yet. Add your first expense using the form above.
-    </p>
+      <!-- Filters + charts -->
+      <section class="panel">
+        <h2>Filters & Charts</h2>
+
+        <!-- Filters -->
+        <div class="filters">
+          <div class="form-group">
+            <label for="searchInput">Search</label>
+            <input
+              type="text"
+              id="searchInput"
+              placeholder="Search by description or category"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="filterMonth">Month</label>
+            <!-- Month input allows YYYY-MM format, helpful for monthly filtering. -->
+            <input type="month" id="filterMonth" />
+          </div>
+
+          <div class="form-group">
+            <label for="filterCategory">Category</label>
+            <select id="filterCategory">
+              <option value="">All</option>
+              <option value="Food">Food</option>
+              <option value="Transport">Transport</option>
+              <option value="Shopping">Shopping</option>
+              <option value="Rent">Rent</option>
+              <option value="Bills">Bills</option>
+              <option value="Entertainment">Entertainment</option>
+              <option value="Health">Health</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="sortBy">Sort By</label>
+            <select id="sortBy">
+              <option value="dateDesc">Date (newest first)</option>
+              <option value="dateAsc">Date (oldest first)</option>
+              <option value="amountDesc">Amount (high to low)</option>
+              <option value="amountAsc">Amount (low to high)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Charts area -->
+        <div class="chart-container">
+          <div class="chart-header">
+            <h3>Category-wise Spending</h3>
+            <div class="chart-toggle">
+              <button
+                type="button"
+                class="btn btn-small btn-outline chart-active"
+                data-chart-type="pie"
+              >
+                Pie
+              </button>
+              <button
+                type="button"
+                class="btn btn-small btn-outline"
+                data-chart-type="bar"
+              >
+                Bar
+              </button>
+            </div>
+          </div>
+          <!-- Canvas to render Chart.js category chart -->
+          <canvas id="categoryChart"></canvas>
+        </div>
+
+        <div class="chart-container" style="margin-top: 1rem;">
+          <div class="chart-header">
+            <h3>Budget Utilization</h3>
+          </div>
+          <!-- Canvas to render budget doughnut chart -->
+          <canvas id="budgetChart"></canvas>
+        </div>
+      </section>
+    </section>
+
+    <!-- Expenses table -->
+    <section class="panel">
+      <h2>Expenses</h2>
+      <div class="table-wrapper">
+        <table id="expenseTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Category</th>
+              <th>Amount (₹)</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="expenseTableBody">
+            <!-- Filled dynamically with JavaScript -->
+          </tbody>
+        </table>
+        <p id="emptyState" class="empty-state">
+          No expenses yet. Add your first expense using the form above.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>Personal Finance Expense Tracker · Built with HTML, CSS & JavaScript</p>
+  </footer>
+
+  <!-- Simple confirmation modal for destructive actions (clear all / delete) -->
+  <div id="confirmModal" class="modal hidden">
+    <div class="modal-content">
+      <h3 id="confirmTitle">Are you sure?</h3>
+      <p id="confirmMessage">This action cannot be undone.</p>
+      <div class="modal-actions">
+        <button id="confirmCancelBtn" class="btn btn-outline">Cancel</button>
+        <button id="confirmOkBtn" class="btn btn-danger">Yes, Continue</button>
+      </div>
+    </div>
   </div>
-</section>
-</main> <footer class="app-footer"> <p>Personal Finance Expense Tracker · Built with HTML, CSS & JavaScript</p> </footer> <!-- Simple confirmation modal for destructive actions (clear all) --> <div id="confirmModal" class="modal hidden"> <div class="modal-content"> <h3 id="confirmTitle">Are you sure?</h3> <p id="confirmMessage">This action cannot be undone.</p> <div class="modal-actions"> <button id="confirmCancelBtn" class="btn btn-outline">Cancel</button> <button id="confirmOkBtn" class="btn btn-danger">Yes, Continue</button> </div> </div> </div> </body> </html>
+</body>
+</html>
